@@ -19,3 +19,6 @@ app/data/*.db-journal
 # Avatars & Uploads
 app/data/avatars/*
 !app/data/avatars/.keep
+
+# Archives
+*.zip

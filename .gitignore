@@ -1,0 +1,21 @@
+# Python
+**/__pycache__/
+**/*.pyc
+.env
+.venv/
+venv/
+
+# Database
+app/data/*.db
+app/data/*.db-journal
+
+# Tailwind Executables (Do not upload to Git)
+*.exe
+**/tailwindcss*
+
+# Logs
+*.log
+
+# Avatars & Uploads
+app/data/avatars/*
+!app/data/avatars/.keep

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  hass_supplies_app:
+    build: ./app
+    container_name: hass_supplies_app
+    ports:
+      - "3003:8000"
+    environment:
+      - MQTT_BROKER=172.16.100.253
+      - MQTT_PORT=1883
+      - MQTT_USER=homeassistant
+      - MQTT_PASSWORD=ochoc2AezeVoh2ae4fohf2Fool8eHoaqu8ueta7jimagheh4nia3zaesuong1Iif
+    volumes:
+      - ./app/data:/app/data
+      - /mnt/hdd-data/supplies-app-backup:/backup
+    command: >
+        bash -c "pip install fastapi uvicorn jinja2 paho-mqtt python-multipart tzdata && uvicorn main:app --host 0.0.0.0 --port 8000"
+    restart: always

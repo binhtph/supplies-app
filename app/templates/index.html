@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quản lý Thiết bị & Phương tiện</title>
+    <link rel="stylesheet" href="/static/css/tailwind.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .view-grid .item-card {
+            width: calc(50% - 0.5rem);
+            display: inline-block;
+            vertical-align: top;
+        }
+
+        .view-list .item-card {
+            width: 100%;
+            display: block;
+        }
+
+        @media (max-width: 640px) {
+            .view-grid .item-card {
+                width: 100%;
+            }
+        }
+
+        .avatar-hover:hover::after {
+            content: '\f030';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+
+<body class="bg-ios-bg min-h-screen text-[#1C1C1E] pb-20 selection:bg-ios-blue selection:text-white" hx-boost="true">
+
+    <!-- HEADER / STATUS BAR -->
+    <div class="bg-white sticky top-0 z-40 border-b border-ios-grayLight px-4 py-3 shadow-sm">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-ios-blue text-xl"></i>
+                <h1 class="text-lg font-bold tracking-tight">Hass Dashboard</h1>
+            </div>
+            <div class="flex gap-4 items-center text-[13px] font-medium">
+                <div class="flex items-center gap-1" id="sys-clock">--:--:--</div>
+                <div class="flex items-center gap-1" id="mqtt-status">
+                    <span class="w-2 h-2 rounded-full bg-gray-400"></span> Đang tải...
+                </div>
+                <button onclick="toggleView()"
+                    class="p-2 bg-ios-grayLight rounded-lg text-ios-blue hover:bg-gray-200 transition">
+                    <i id="view-icon" class="fa-solid fa-list"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-6">
+
+        <!-- THÔNG BÁO THÀNH CÔNG -->
+        <div id="successToast"
+            class="hidden mb-4 bg-green-50 border border-green-200 text-green-700 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm transition-all duration-300 transform -translate-y-2 opacity-0">
+            <i class="fa-solid fa-circle-check text-green-500 text-lg flex-shrink-0"></i>
+            <span id="successToastMsg" class="text-sm font-medium"></span>
+            <button onclick="hideSuccessToast()" class="ml-auto text-green-400 hover:text-green-600"><i
+                    class="fa-solid fa-times"></i></button>
+        </div>
+        <script>
+            function hideSuccessToast() {
+                const t = document.getElementById('successToast');
+                t.classList.remove('translate-y-0', 'opacity-100');
+                t.classList.add('-translate-y-2', 'opacity-0');
+                setTimeout(() => t.classList.add('hidden'), 300);
+            }
+            (function () {
+                const p = new URLSearchParams(window.location.search);
+                const msg = p.get('success');
+                if (msg) {
+                    const toast = document.getElementById('successToast');
+                    document.getElementById('successToastMsg').textContent = msg;
+                    toast.classList.remove('hidden');
+                    // Trigger animation
+                    setTimeout(() => {
+                        toast.classList.remove('-translate-y-2', 'opacity-0');
+                        toast.classList.add('translate-y-0', 'opacity-100');
+                    }, 10);
+                    // Xóa param khỏi URL để không hiện lại khi F5
+                    history.replaceState({}, '', '/?group_id=' + (p.get('group_id') || ''));
+                    // Tự động ẩn sau 5s
+                    setTimeout(hideSuccessToast, 5000);
+                }
+            })();
+        </script>
+
+        <!-- GROUP SELECTOR -->
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-[20px] font-bold">Khu vực</h2>
+            <div class="flex items-center gap-4 text-right">
+                <div class="flex flex-col items-end">
+                    <button onclick="triggerBackup()"
+                        class="text-ios-green text-[14px] font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-200 hover:bg-green-100 transition shadow-sm flex items-center gap-2">
+                        <i id="backup-spinner" class="fa-solid fa-circle-notch fa-spin" style="display: none;"></i>
+                        <i id="backup-icon" class="fa-solid fa-cloud-arrow-up"></i>
+                        Backup Ngay
+                    </button>
+                    <div id="backup-status-text" class="text-[10px] text-gray-500 font-medium mt-1 pr-1">
+                        {% if not is_backup_complete %}
+                        <span class="text-red-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-0.5 animate-pulse"></i>Thiếu bản sao lưu! Backup ngay</span>
+                        {% elif backup_status %}
+                        {% if backup_status.success %}
+                        <span class="text-green-600"><i class="fa-solid fa-check mr-0.5"></i>Đã lưu: {{
+                            backup_status.time }}</span>
+                        {% else %}
+                        <span class="text-red-500"><i class="fa-solid fa-xmark mr-0.5"></i>Lỗi: {{ backup_status.time
+                            }}</span>
+                        {% endif %}
+                        {% else %}
+                        Chưa có bản sao lưu
+                        {% endif %}
+                    </div>
+                </div>
+                <button onclick="document.getElementById('addGroupModal').classList.remove('hidden')"
+                    class="text-ios-blue text-[14px] font-bold">+ Thêm Nhóm</button>
+            </div>
+        </div>
+
+        <script>
+            async function triggerBackup() {
+                const btn = document.getElementById('backup-icon');
+                const spinner = document.getElementById('backup-spinner');
+                const statusText = document.getElementById('backup-status-text');
+
+                btn.style.display = 'none';
+                spinner.style.display = 'inline-block';
+                statusText.innerHTML = '<span class="text-blue-500"><i class="fa-solid fa-spinner fa-spin mr-0.5"></i>Đang sao lưu...</span>';
+
+                try {
+                    const res = await fetch('/trigger-backup', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                        statusText.innerHTML = '<span class="text-green-600"><i class="fa-solid fa-check mr-0.5"></i>Đã lưu: ' + data.time + '</span>';
+                    } else {
+                        statusText.innerHTML = '<span class="text-red-500"><i class="fa-solid fa-xmark mr-0.5"></i>Lỗi: ' + data.time + '</span>';
+                        alert("Lỗi sao lưu: " + data.message);
+                    }
+                } catch (e) {
+                    statusText.innerHTML = '<span class="text-red-500"><i class="fa-solid fa-xmark mr-0.5"></i>Lỗi kết nối</span>';
+                } finally {
+                    btn.style.display = 'inline-block';
+                    spinner.style.display = 'none';
+                }
+            }
+        </script>
+        <div class="flex overflow-x-auto gap-2 pb-2 mb-6 scrollbar-hide">
+            {% for g in groups %}
+            {% if current_group == g.id %}
+            <div
+                class="flex items-center bg-black text-white rounded-[12px] pl-4 pr-1 py-1 whitespace-nowrap shadow-md">
+                <a href="/?group_id={{ g.id }}" class="font-semibold text-[14px] mr-2">{{ g.name }}</a>
+                <form action="/delete-group" method="POST" class="m-0"
+                    onsubmit="return confirm('XÓA NHÓM NÀY?\nSẽ xóa toàn bộ Thiết bị và Xe thuộc nhóm này vĩnh viễn!')">
+                    <input type="hidden" name="group_id" value="{{ g.id }}">
+                    <button type="submit"
+                        class="w-6 h-6 flex items-center justify-center rounded-full bg-gray-800 hover:bg-red-500 text-white transition"><i
+                            class="fa-solid fa-times text-xs"></i></button>
+                </form>
+            </div>
+            {% else %}
+            <a href="/?group_id={{ g.id }}"
+                class="bg-white text-black font-semibold text-[14px] rounded-[12px] px-4 py-2 whitespace-nowrap shadow-sm border border-ios-grayLight hover:bg-gray-50 transition">
+                {{ g.name }}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        <!-- MAIN CONTENT CONTAINER -->
+        <div id="main-container" class="view-list flex flex-col gap-8">
+
+            <!-- THIẾT BỊ SECTION -->
+            <section>
+                <div class="flex items-center gap-2 mb-3 ml-1 flex-wrap">
+                    <div class="bg-ios-blue text-white w-7 h-7 rounded-lg flex items-center justify-center shadow-sm"><i
+                            class="fa-solid fa-plug text-sm"></i></div>
+                    <h2 class="text-[20px] font-bold">Thiết bị (Vật tư)</h2>
+                    <div class="ml-auto flex items-center gap-2">
+                        <span
+                            class="text-[13px] font-semibold text-ios-gray bg-white border border-gray-200 px-2 py-1 rounded-lg shadow-sm"
+                            title="Tổng chi phí thay thế"><i
+                                class="fa-solid fa-money-bill-wave text-ios-green mr-1"></i> {{
+                            "{:,.0f}".format(group_equip_cost) }}đ</span>
+                        <span class="bg-ios-grayLight text-ios-gray text-xs font-bold px-2 py-1.5 rounded-lg">{{
+                            equipment|length }} mục</span>
+                        <button onclick="document.getElementById('addItemModal').classList.remove('hidden')"
+                            class="bg-ios-grayLight text-ios-blue text-xs font-bold px-2 py-1.5 rounded-lg hover:bg-gray-200 shadow-sm transition">+
+                            Thêm Thiết bị</button>
+                    </div>
+                </div>
+
+                {% if equipment %}
+                <div id="equipment-list" class="flex flex-wrap gap-2" data-type="device">
+                    {% for e in equipment %}
+                    <div class="item-card bg-white rounded-2xl shadow-sm border border-black/[0.02] overflow-hidden"
+                        data-id="{{ e.id }}">
+                        <!-- CARD HEADER -->
+                        <div class="p-4 cursor-pointer active:bg-gray-50 transition-colors relative"
+                            onclick="toggleAccordion('dev_{{ e.id }}')">
+                            <div class="flex items-center gap-3 mb-2">
+                                <!-- Avatar -->
+                                <div class="w-12 h-12 bg-ios-grayLight rounded-full flex-shrink-0 relative avatar-hover overflow-hidden shadow-inner"
+                                    onclick="event.stopPropagation(); document.getElementById('upload_dev_{{e.id}}').click()">
+                                    {% if e.avatar_url %}
+                                    <img src="{{ e.avatar_url }}" class="w-full h-full object-cover">
+                                    {% else %}
+                                    <i
+                                        class="fa-solid fa-microchip absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-ios-gray text-xl"></i>
+                                    {% endif %}
+                                </div>
+                                <form id="form_upload_dev_{{e.id}}" action="/upload-avatar" method="POST"
+                                    enctype="multipart/form-data" class="hidden">
+                                    <input type="hidden" name="item_type" value="device">
+                                    <input type="hidden" name="item_id" value="{{ e.id }}">
+                                    <input type="file" id="upload_dev_{{e.id}}" name="file" accept="image/*"
+                                        onchange="document.getElementById('form_upload_dev_{{e.id}}').submit()">
+                                </form>
+
+                                <div class="flex-1 pr-2">
+                                    <h3 class="text-[16px] font-bold leading-tight">{{ e.display_name }}</h3>
+                                    <div class="text-[12px] text-ios-gray font-medium mt-0.5"><i
+                                            class="fa-solid fa-clock-rotate-left mr-1"></i>Đã dùng: {{ e.days_used }}/{{
+                                        e.lifetime_days }} ngày</div>
+                                </div>
+
+                                <div class="flex flex-col items-end gap-1">
+                                    <div class="flex gap-1">
+                                        <form action="/toggle-pin" method="POST" class="m-0"
+                                            onclick="event.stopPropagation()">
+                                            <input type="hidden" name="item_type" value="device"><input type="hidden"
+                                                name="item_id" value="{{ e.id }}">
+                                            <button type="submit"
+                                                class="text-[15px] {% if e.is_pinned %}text-ios-orange{% else %}text-ios-grayLight hover:text-gray-400{% endif %}"><i
+                                                    class="fa-solid fa-thumbtack"></i></button>
+                                        </form>
+                                    </div>
+                                    <div
+                                        class="text-[13px] font-semibold {% if e.days_left <= 0 %}text-ios-red animate-pulse{% elif e.days_left < 30 %}text-ios-orange{% else %}text-ios-green{% endif %} bg-gray-50 px-2 py-0.5 rounded-md border border-gray-100">
+                                        Còn {{ e.days_left }} ngày
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Progress Bar -->
+                            <div class="w-full bg-ios-grayLight h-1.5 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-700 ease-out {% if e.percent > 50 %}bg-ios-green{% elif e.percent > 20 %}bg-ios-orange{% else %}bg-ios-red{% endif %}"
+                                    style="width: {{ e.percent }}%"></div>
+                            </div>
+                        </div>
+
+                        <!-- DETAILS ACCORDION -->
+                        <div id="details_dev_{{ e.id }}" class="hidden bg-[#F9F9FB] border-t border-ios-grayLight p-4">
+                            <div
+                                class="flex justify-between items-center mb-4 bg-white p-2 rounded-xl border border-gray-200">
+                                <span class="text-[13px] font-semibold text-gray-700"><i
+                                        class="fa-brands fa-hubspot text-ios-blue mr-1"></i>Đồng bộ Hass (MQTT)</span>
+                                <form action="/toggle-mqtt" method="POST" class="m-0 flex items-center">
+                                    <input type="hidden" name="item_type" value="device"><input type="hidden"
+                                        name="item_id" value="{{ e.id }}">
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" name="is_mqtt_enabled" class="sr-only peer"
+                                            onchange="this.form.submit()" {% if e.is_mqtt_enabled %}checked{% endif %}>
+                                        <div
+                                            class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-ios-blue/30 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ios-green">
+                                        </div>
+                                    </label>
+                                </form>
+                            </div>
+
+                            <form action="/update-equipment-details" method="POST" class="space-y-3">
+                                <input type="hidden" name="equip_id" value="{{ e.id }}"><input type="hidden"
+                                    name="group_id" value="{{ current_group }}">
+                                <div class="grid grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Chu kỳ
+                                            (Ngày)</label><input type="number" name="lifetime_days"
+                                            value="{{ e.lifetime_days }}"
+                                            class="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-sm font-semibold">
+                                    </div>
+                                    <div><label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Chi phí
+                                            (đ)</label><input type="number" name="cost" value="{{ e.cost | int }}"
+                                            class="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-sm font-semibold">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="min-w-0"><label class="block text-[10px] sm:text-[11px] font-bold text-gray-500 uppercase mb-1 truncate">Ngày
+                                            thay trước</label><input type="date" name="replace_date"
+                                            value="{{ e.replace_date_raw if e.replace_date_raw else '' }}"
+                                            class="w-full min-w-0 bg-white border border-gray-200 rounded px-1 sm:px-2 py-1.5 text-[11px] sm:text-sm">
+                                    </div>
+                                    <div class="min-w-0"><label class="block text-[10px] sm:text-[11px] font-bold text-gray-500 uppercase mb-1 truncate">Dự kiến
+                                            thay</label>
+                                        <div
+                                            class="w-full min-w-0 bg-gray-100 text-gray-600 border border-gray-200 rounded px-1 sm:px-2 py-1.5 text-[11px] sm:text-sm font-bold truncate">
+                                            {{ e.next_date }}</div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="text" name="notes" value="{{ e.notes if e.notes else '' }}"
+                                        placeholder="Ghi chú kỹ thuật..."
+                                        class="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm">
+                                    <input type="url" name="purchase_link"
+                                        value="{{ e.purchase_link if e.purchase_link else '' }}"
+                                        placeholder="Link mua..."
+                                        class="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm text-ios-blue">
+                                    {% if e.purchase_link %}<a href="{{ e.purchase_link }}" target="_blank"
+                                        class="bg-ios-grayLight text-ios-blue px-2 py-1.5 rounded text-sm font-bold flex items-center"><i
+                                            class="fa-solid fa-arrow-up-right-from-square"></i></a>{% endif %}
+                                </div>
+                                <div class="flex justify-end gap-2 pt-1 border-t border-gray-200">
+                                    <button type="button"
+                                        onclick="if(confirm('🚨 Xóa thiết bị này vĩnh viễn?')) document.getElementById('del_dev_{{e.id}}').submit()"
+                                        class="px-3 py-1.5 bg-red-50 text-ios-red text-sm font-semibold rounded"><i
+                                            class="fa-solid fa-trash mr-1"></i> Xóa</button>
+                                    <button type="submit"
+                                        class="px-3 py-1.5 bg-ios-blue text-white text-sm font-semibold rounded shadow-sm"><i
+                                            class="fa-solid fa-floppy-disk mr-1"></i> Lưu</button>
+                                </div>
+                            </form>
+                            <form id="del_dev_{{e.id}}" action="/delete-equipment" method="POST" class="hidden"><input
+                                    type="hidden" name="equip_id" value="{{ e.id }}"><input type="hidden"
+                                    name="group_id" value="{{ current_group }}"></form>
+
+                            <div class="mt-3 pt-3 border-t border-dashed border-gray-300">
+                                <form action="/replace-equipment" method="POST" class="flex gap-2"
+                                    onsubmit="return confirm('Tiến hành thay mới? Ngày thay sẽ cập nhật thành hôm nay.')">
+                                    <input type="hidden" name="equip_id" value="{{ e.id }}"><input type="hidden"
+                                        name="group_id" value="{{ current_group }}">
+                                    <input type="number" name="cost" placeholder="Giá tiền..."
+                                        class="flex-1 bg-white border border-gray-200 rounded px-2 py-1.5 text-sm">
+                                    <button type="submit"
+                                        class="px-4 py-1.5 bg-ios-green text-white text-sm font-bold rounded shadow"><i
+                                            class="fa-solid fa-rotate mr-1"></i> Đã Thay Mới</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-6 bg-white rounded-2xl border border-dashed border-gray-300 text-ios-gray">
+                    <i class="fa-solid fa-box-open text-3xl mb-2 opacity-50"></i>
+                    <p class="text-sm font-medium">Chưa có thiết bị nào</p>
+                </div>
+                {% endif %}
+            </section>
+
+            <!-- PHƯƠNG TIỆN SECTION -->
+            <section>
+                <div class="flex items-center gap-2 mb-3 ml-1 flex-wrap">
+                    <div class="bg-ios-orange text-white w-7 h-7 rounded-lg flex items-center justify-center shadow-sm">
+                        <i class="fa-solid fa-motorcycle text-sm"></i></div>
+                    <h2 class="text-[20px] font-bold">Phương tiện (Xe)</h2>
+                    <div class="ml-auto flex items-center gap-2">
+                        <span
+                            class="text-[13px] font-semibold text-ios-gray bg-white border border-gray-200 px-2 py-1 rounded-lg shadow-sm"
+                            title="Tổng chi phí bảo dưỡng"><i
+                                class="fa-solid fa-money-bill-wave text-ios-orange mr-1"></i> {{
+                            "{:,.0f}".format(group_veh_cost) }}đ</span>
+                        <span class="bg-ios-grayLight text-ios-gray text-xs font-bold px-2 py-1.5 rounded-lg">{{
+                            vehicles|length }} xe</span>
+                        <button onclick="document.getElementById('addVehicleModal').classList.remove('hidden')"
+                            class="bg-ios-grayLight text-ios-blue text-xs font-bold px-2 py-1.5 rounded-lg hover:bg-gray-200 shadow-sm transition">+
+                            Thêm Xe</button>
+                    </div>
+                </div>
+
+                <div class="block" id="vehicle-list">
+                    {% for v in vehicles %}
+                    <div class="pb-6 vehicle-card" data-id="{{ v.id }}">
+                        <div
+                            class="bg-gray-800 text-white rounded-2xl shadow-md overflow-hidden border border-gray-700">
+                            <div
+                                class="p-4 flex flex-wrap items-center justify-between gap-4 border-b border-gray-700 bg-gray-900">
+                                <div class="flex items-center gap-3">
+                                    <!-- Drag Handle cho xe -->
+                                    <div class="vehicle-drag-handle cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400 px-1 py-2 flex-shrink-0 touch-none"
+                                        title="Kéo để sắp xếp">
+                                        <i class="fa-solid fa-grip-vertical text-sm"></i>
+                                    </div>
+                                    <!-- Avatar Xe -->
+                                    <div class="w-12 h-12 bg-gray-800 rounded-xl flex-shrink-0 relative avatar-hover overflow-hidden shadow-inner border border-gray-700"
+                                        onclick="document.getElementById('upload_veh_{{v.id}}').click()">
+                                        {% if v.avatar_url %}
+                                        <img src="{{ v.avatar_url }}" class="w-full h-full object-cover">
+                                        {% else %}
+                                        <i
+                                            class="fa-solid fa-car absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-gray-500 text-xl"></i>
+                                        {% endif %}
+                                    </div>
+                                    <form id="form_upload_veh_{{v.id}}" action="/upload-avatar" method="POST"
+                                        enctype="multipart/form-data" class="hidden">
+                                        <input type="hidden" name="item_type" value="vehicle"><input type="hidden"
+                                            name="item_id" value="{{ v.id }}">
+                                        <input type="file" id="upload_veh_{{v.id}}" name="file" accept="image/*"
+                                            onchange="document.getElementById('form_upload_veh_{{v.id}}').submit()">
+                                    </form>
+
+                                    <div>
+                                        <h3 class="text-lg font-bold flex items-center gap-2">{{ v.display_name }}
+                                            <form action="/toggle-mqtt" method="POST" class="m-0 flex items-center"
+                                                title="Bật/Tắt MQTT cho nguyên xe">
+                                                <input type="hidden" name="item_type" value="vehicle"><input
+                                                    type="hidden" name="item_id" value="{{ v.id }}">
+                                                <label class="relative inline-flex items-center cursor-pointer ml-1">
+                                                    <input type="checkbox" class="sr-only peer"
+                                                        onchange="this.form.submit()" {% if v.is_mqtt_enabled
+                                                        %}checked{% endif %}>
+                                                    <div
+                                                        class="w-9 h-5 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-ios-green">
+                                                    </div>
+                                                </label>
+                                            </form>
+                                        </h3>
+                                        <div class="text-[12px] text-gray-400 mt-1">
+                                            ODO: <b class="text-teal-400 text-[16px] font-extrabold tracking-tight">{{
+                                                "{:,.0f}".format(v.stats.current_odo) }}</b> km
+                                            <span class="mx-1 text-gray-600">•</span> ~{{ v.stats.avg_km_day }} km/ngày
+                                            <span class="mx-1 text-gray-600">•</span> Chi phí: <b
+                                                class="text-ios-orange">{{ "{:,.0f}".format(v.total_cost) }}đ</b>
+                                        </div>
+                                        <div class="text-[10px] text-gray-600 mt-0.5">
+                                            <i class="fa-regular fa-calendar-check mr-1"></i>Cập nhật ODO: {{
+                                            v.stats.last_update }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                                    <form action="/update-odo" method="POST"
+                                        class="flex-1 sm:flex-none flex items-center bg-black/40 p-1 rounded-full border border-gray-700/50">
+                                        <input type="hidden" name="vehicle_id" value="{{ v.id }}"><input type="hidden"
+                                            name="group_id" value="{{ current_group }}">
+                                        <input type="number" name="new_odo" required placeholder="Cập nhật ODO..."
+                                            class="w-full sm:w-28 bg-transparent text-white placeholder-gray-500 px-3 text-[11px] font-medium focus:outline-none">
+                                        <button type="submit"
+                                            class="bg-teal-600 hover:bg-teal-500 text-white p-1.5 rounded-full shadow transition"><i
+                                                class="fa-solid fa-check text-xs"></i></button>
+                                    </form>
+                                    <form action="/delete-vehicle" method="POST" class="m-0"
+                                        onsubmit="return confirm('🚨 XÓA XE NÀY VÀ TOÀN BỘ PHỤ TÙNG?')">
+                                        <input type="hidden" name="vehicle_id" value="{{ v.id }}">
+                                        <input type="hidden" name="group_id" value="{{ current_group }}">
+                                        <button type="submit"
+                                            class="h-full px-3 bg-red-900/50 hover:bg-red-500 text-red-400 hover:text-white rounded-full border border-red-800/50 transition"><i
+                                                class="fa-solid fa-trash text-xs"></i></button>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <!-- Danh sách phụ tùng của xe này -->
+                            <div class="p-3 bg-gray-100/5">
+                                {% if v.parts %}
+                                <div class="flex flex-wrap gap-2 part-list" data-type="part">
+                                    {% for p in v.parts %}
+                                    <div class="item-card w-full bg-white text-black rounded-xl shadow-sm border border-black/[0.05] overflow-hidden"
+                                        data-id="{{ p.id }}">
+
+                                        <div class="p-3 cursor-pointer active:bg-gray-50 transition-colors"
+                                            onclick="toggleAccordion('part_{{ p.id }}')">
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <!-- Avatar Phụ tùng -->
+                                                <div class="w-10 h-10 bg-ios-grayLight rounded-lg flex-shrink-0 relative avatar-hover overflow-hidden"
+                                                    onclick="event.stopPropagation(); document.getElementById('upload_part_{{p.id}}').click()">
+                                                    {% if p.avatar_url %}
+                                                    <img src="{{ p.avatar_url }}" class="w-full h-full object-cover">
+                                                    {% else %}
+                                                    <i
+                                                        class="fa-solid fa-gear absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-ios-gray"></i>
+                                                    {% endif %}
+                                                </div>
+                                                <form id="form_upload_part_{{p.id}}" action="/upload-avatar"
+                                                    method="POST" enctype="multipart/form-data" class="hidden">
+                                                    <input type="hidden" name="item_type" value="part"><input
+                                                        type="hidden" name="item_id" value="{{ p.id }}">
+                                                    <input type="file" id="upload_part_{{p.id}}" name="file"
+                                                        accept="image/*"
+                                                        onchange="document.getElementById('form_upload_part_{{p.id}}').submit()">
+                                                </form>
+
+                                                <div class="flex-1 pr-2">
+                                                    <h4 class="text-[14px] font-bold leading-tight">{{ p.display_name }}
+                                                    </h4>
+                                                    <div class="text-[11px] text-ios-gray font-medium mt-0.5">Đã đi: {{
+                                                        "{:,.0f}".format(p.km_used) }}/{{ p.lifetime_km }} km</div>
+                                                </div>
+
+                                                <div class="flex flex-col items-end gap-1">
+                                                    <div class="flex gap-1">
+                                                        <form action="/toggle-pin" method="POST" class="m-0"
+                                                            onclick="event.stopPropagation()">
+                                                            <input type="hidden" name="item_type" value="part"><input
+                                                                type="hidden" name="item_id" value="{{ p.id }}">
+                                                            <button type="submit"
+                                                                class="text-[13px] {% if p.is_pinned %}text-ios-orange{% else %}text-ios-grayLight hover:text-gray-400{% endif %}"><i
+                                                                    class="fa-solid fa-thumbtack"></i></button>
+                                                        </form>
+                                                    </div>
+                                                    <div
+                                                        class="text-[12px] font-semibold {% if p.km_left <= 0 %}text-ios-red animate-pulse{% elif p.km_left < 500 %}text-ios-orange{% else %}text-teal-600{% endif %} bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
+                                                        Còn {{ "{:,.0f}".format(p.km_left) }} km
+                                                    </div>
+                                                    {% if p.next_date and p.next_date != 'Chưa rõ' %}
+                                                    <div class="text-[10px] text-gray-400 text-right mt-0.5">
+                                                        <i class="fa-regular fa-calendar mr-0.5"></i>{{ p.next_date }}
+                                                    </div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="w-full bg-ios-grayLight h-1 rounded-full overflow-hidden">
+                                                <div class="h-full rounded-full transition-all duration-700 ease-out {% if p.percent > 50 %}bg-teal-500{% elif p.percent > 20 %}bg-ios-orange{% else %}bg-ios-red{% endif %}"
+                                                    style="width: {{ p.percent }}%"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- DETAIL PHỤ TÙNG -->
+                                        <div id="details_part_{{ p.id }}"
+                                            class="hidden bg-[#F9F9FB] border-t border-ios-grayLight p-3">
+                                            <div
+                                                class="flex justify-between items-center mb-3 bg-white p-1.5 rounded-lg border border-gray-200">
+                                                <span class="text-[12px] font-semibold text-gray-700"><i
+                                                        class="fa-brands fa-hubspot text-teal-600 mr-1"></i>Đồng bộ Hass
+                                                    (MQTT)</span>
+                                                <form action="/toggle-mqtt" method="POST" class="m-0 flex items-center">
+                                                    <input type="hidden" name="item_type" value="part"><input
+                                                        type="hidden" name="item_id" value="{{ p.id }}">
+                                                    <label class="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" name="is_mqtt_enabled"
+                                                            class="sr-only peer" onchange="this.form.submit()" {% if
+                                                            p.is_mqtt_enabled %}checked{% endif %}>
+                                                        <div
+                                                            class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-teal-500/30 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ios-green">
+                                                        </div>
+                                                    </label>
+                                                </form>
+                                            </div>
+
+                                            <form action="/update-part-details" method="POST" class="space-y-2">
+                                                <input type="hidden" name="part_id" value="{{ p.id }}"><input
+                                                    type="hidden" name="vehicle_id" value="{{ v.id }}"><input
+                                                    type="hidden" name="group_id" value="{{ current_group }}">
+                                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                                    <div><label
+                                                            class="block text-[10px] font-bold text-gray-500 uppercase">Chu
+                                                            kỳ (Km)</label><input type="number" name="lifetime_km"
+                                                            value="{{ p.lifetime_km }}"
+                                                            class="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-mono">
+                                                    </div>
+                                                    <div><label
+                                                            class="block text-[10px] font-bold text-gray-500 uppercase text-teal-600">Ép
+                                                            Km còn lại</label><input type="number" name="km_left"
+                                                            placeholder="Còn: {{ p.km_left }}"
+                                                            class="w-full bg-teal-50 border border-teal-200 rounded px-2 py-1 text-xs font-mono">
+                                                    </div>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-2">
+                                                    <div class="min-w-0"><label
+                                                            class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase truncate">Ngày
+                                                            thay</label><input type="date" name="replace_date"
+                                                            value="{{ p.replace_date_raw }}"
+                                                            class="w-full min-w-0 bg-white border border-gray-200 rounded px-1 sm:px-2 py-1 text-[11px] sm:text-xs">
+                                                    </div>
+                                                    <div class="min-w-0"><label
+                                                            class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase truncate">ODO
+                                                            lúc thay</label><input type="number" name="replace_odo"
+                                                            value="{{ p.replace_odo }}"
+                                                            class="w-full min-w-0 bg-white border border-gray-200 rounded px-1 sm:px-2 py-1 text-[11px] sm:text-xs font-mono">
+                                                    </div>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-2">
+                                                    <input type="text" name="notes"
+                                                        value="{{ p.notes if p.notes else '' }}"
+                                                        placeholder="Ghi chú (nhớt 10w40...)"
+                                                        class="w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs">
+                                                    <div class="flex gap-1">
+                                                        <input type="url" name="purchase_link"
+                                                            value="{{ p.purchase_link if p.purchase_link else '' }}"
+                                                            placeholder="Link mua..."
+                                                            class="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-xs text-ios-blue">
+                                                        {% if p.purchase_link %}<a href="{{ p.purchase_link }}"
+                                                            target="_blank"
+                                                            class="bg-ios-grayLight text-ios-blue px-2 rounded text-xs flex items-center"><i
+                                                                class="fa-solid fa-link"></i></a>{% endif %}
+                                                    </div>
+                                                </div>
+                                                <div class="flex justify-between items-center pt-1">
+                                                    <button type="button"
+                                                        onclick="if(confirm('Xóa phụ tùng này?')) document.getElementById('del_part_{{p.id}}').submit()"
+                                                        class="text-ios-red text-xs font-semibold"><i
+                                                            class="fa-solid fa-trash"></i> Xóa</button>
+                                                    <button type="submit"
+                                                        class="bg-teal-600 text-white px-3 py-1 rounded text-xs font-bold shadow-sm"><i
+                                                            class="fa-solid fa-check"></i> Lưu cập nhật</button>
+                                                </div>
+                                            </form>
+                                            <form id="del_part_{{p.id}}" action="/delete-part" method="POST"
+                                                class="hidden"><input type="hidden" name="part_id"
+                                                    value="{{ p.id }}"><input type="hidden" name="group_id"
+                                                    value="{{ current_group }}"></form>
+
+                                            <div class="mt-2 pt-2 border-t border-dashed border-gray-300">
+                                                <form action="/replace-part" method="POST" class="flex gap-1"
+                                                    onsubmit="return confirm('Xác nhận đã thay mới? Hệ thống sẽ lấy mốc ODO hiện tại làm mốc bắt đầu mới.')">
+                                                    <input type="hidden" name="part_id" value="{{ p.id }}"><input
+                                                        type="hidden" name="vehicle_id" value="{{ v.id }}"><input
+                                                        type="hidden" name="group_id" value="{{ current_group }}">
+                                                    <input type="number" name="cost" placeholder="Giá tiền..."
+                                                        class="flex-1 bg-white border border-gray-200 rounded px-2 py-1 text-xs">
+                                                    <button type="submit"
+                                                        class="px-3 bg-gray-800 text-white rounded text-xs font-bold shadow-sm"><i
+                                                            class="fa-solid fa-rotate"></i> Thay mới xong</button>
+                                                </form>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <div class="text-center py-4 text-gray-500 text-xs">Chưa có phụ tùng nào, nhấn Thêm hạng
+                                    mục để bắt đầu.</div>
+                                {% endif %}
+
+                                <div class="mt-3">
+                                    <button
+                                        onclick="document.getElementById('partVehicleId').value='{{ v.id }}'; document.getElementById('addPartModal').classList.remove('hidden')"
+                                        class="w-full border-2 border-dashed border-gray-500/30 text-gray-400 hover:text-gray-200 hover:border-gray-500 hover:bg-white/5 font-bold py-2 rounded-xl text-sm transition">
+                                        + Thêm Hạng Mục Bảo Dưỡng
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if not vehicles %}
+                <div class="text-center py-6 bg-white rounded-2xl border border-dashed border-gray-300 text-ios-gray">
+                    <i class="fa-solid fa-car text-3xl mb-2 opacity-50"></i>
+                    <p class="text-sm font-medium">Chưa có xe máy / phương tiện nào</p>
+                </div>
+                {% endif %}
+            </section>
+
+        </div>
+    </div>
+
+    <!-- FLOATING ADD BUTTON -->
+    <button onclick="document.getElementById('addItemModal').classList.remove('hidden')"
+        class="fixed bottom-20 right-6 w-14 h-14 bg-black text-white rounded-full shadow-[0_8px_16px_rgba(0,0,0,0.3)] flex items-center justify-center text-2xl hover:scale-105 active:scale-95 transition-transform z-30">
+        <i class="fa-solid fa-plus"></i>
+    </button>
+
+    <!-- LOGS BUTTON -->
+    <button onclick="openLogs()"
+        class="fixed bottom-20 left-6 w-10 h-10 bg-white text-black border border-gray-200 rounded-full shadow-md flex items-center justify-center hover:bg-gray-50 transition z-30"
+        title="Xem lịch sử">
+        <i class="fa-solid fa-clock-rotate-left"></i>
+    </button>
+
+    <!-- FOOTER STATUS -->
+    <div
+        class="fixed bottom-0 left-0 right-0 bg-white border-t border-ios-grayLight text-[11px] text-gray-500 px-4 py-2 z-40 flex justify-center shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+        Powered by Antigravity IDE • Hass Tracker
+    </div>
+
+    <!-- MODAL: ADD GROUP -->
+    <div id="addGroupModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl transform transition-all">
+            <div class="px-5 py-4 border-b border-gray-100 font-bold text-lg">Thêm Khu Vực / Nhóm Mới</div>
+            <form action="/add-group" method="POST" class="p-5">
+                <input type="text" name="name" id="groupNameInput" required placeholder="Ví dụ: Nhà bố mẹ, Công ty..."
+                    class="w-full bg-ios-input rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ios-blue mb-1"
+                    oninput="checkDupName(this,'group','groupNameWarn')">
+                <div id="groupNameWarn" class="hidden text-xs text-blue-500 mb-4 font-medium"></div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="document.getElementById('addGroupModal').classList.add('hidden')"
+                        class="flex-1 py-3 bg-ios-grayLight text-black font-semibold rounded-xl text-sm">Hủy</button>
+                    <button type="submit"
+                        class="flex-1 py-3 bg-ios-blue text-white font-bold rounded-xl text-sm shadow-sm">Tạo
+                        Nhóm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD DEVICE -->
+    <div id="addItemModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div class="px-5 py-4 border-b border-gray-100 font-bold text-lg flex justify-between items-center">
+                Thêm Thiết bị vào "{{ groups|selectattr('id', 'equalto', current_group)|map(attribute='name')|first }}"
+                <button type="button" onclick="document.getElementById('addItemModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-black"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form action="/add-item" method="POST" class="p-5 space-y-4">
+                <input type="hidden" name="group_id" value="{{ current_group }}">
+                <input type="hidden" name="item_type" value="device">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Tên Thiết bị / Vật tư</label>
+                    <input type="text" name="name" id="deviceNameInput" required placeholder="VD: Lõi lọc nước số 1"
+                        class="w-full bg-ios-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ios-blue"
+                        oninput="checkDupName(this,'device','deviceNameWarn','{{ current_group }}')">
+                    <div id="deviceNameWarn" class="hidden text-xs text-blue-500 mt-1 font-medium"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Chu kỳ (Số ngày)</label>
+                    <input type="number" name="lifetime" required placeholder="VD: 180"
+                        class="w-full bg-ios-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ios-blue">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Ghi chú</label>
+                        <input type="text" name="notes" placeholder="..."
+                            class="w-full bg-ios-input rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ios-blue">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Link mua hàng</label>
+                        <input type="url" name="purchase_link" placeholder="Tùy chọn"
+                            class="w-full bg-ios-input rounded-lg px-3 py-2.5 text-sm text-ios-blue focus:outline-none focus:ring-1 focus:ring-ios-blue">
+                    </div>
+                </div>
+                <div class="flex items-center justify-between mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <span class="text-xs font-semibold text-gray-700">Đồng bộ lên Hass (MQTT)</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="is_mqtt_enabled" class="sr-only peer" checked>
+                        <div
+                            class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-ios-blue/30 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ios-green">
+                        </div>
+                    </label>
+                </div>
+                <button type="submit"
+                    class="w-full py-3 bg-black text-white font-bold rounded-xl text-sm shadow mt-2">Thêm Thiết
+                    Bị</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD VEHICLE -->
+    <div id="addVehicleModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div
+            class="bg-gray-900 text-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-700">
+            <div class="px-5 py-4 border-b border-gray-800 font-bold text-lg">Thêm Xe Mới</div>
+            <form action="/add-item" method="POST" class="p-5">
+                <input type="hidden" name="group_id" value="{{ current_group }}">
+                <input type="hidden" name="item_type" value="vehicle">
+                <input type="hidden" name="lifetime" value="0">
+                <input type="text" name="name" id="vehicleNameInput" required placeholder="Tên xe (VD: Honda AirBlade)"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-teal-500 mb-1 text-white"
+                    oninput="checkDupName(this,'vehicle','vehicleNameWarn')">
+                <div id="vehicleNameWarn" class="hidden text-xs text-yellow-500 mb-3 font-medium"></div>
+                <div class="flex items-center justify-between p-3 bg-gray-800 rounded-lg border border-gray-700 mb-5">
+                    <span class="text-xs font-semibold text-gray-400">Đồng bộ lên Hass (MQTT)</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="is_mqtt_enabled" class="sr-only peer" checked>
+                        <div
+                            class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ios-green">
+                        </div>
+                    </label>
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="document.getElementById('addVehicleModal').classList.add('hidden')"
+                        class="flex-1 py-3 bg-gray-800 text-gray-300 font-semibold rounded-xl text-sm">Hủy</button>
+                    <button type="submit"
+                        class="flex-1 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-sm shadow-sm transition">Lưu
+                        Xe</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD PART -->
+    <div id="addPartModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-200">
+            <div
+                class="px-5 py-4 border-b border-gray-100 font-bold text-lg flex justify-between items-center text-teal-700">
+                Thêm Hạng Mục Bảo Dưỡng
+                <button type="button" onclick="document.getElementById('addPartModal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-black"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form action="/add-item" method="POST" class="p-5 space-y-4">
+                <input type="hidden" name="group_id" value="{{ current_group }}">
+                <input type="hidden" name="item_type" value="part">
+                <input type="hidden" name="vehicle_id" id="partVehicleId" value="">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Tên phụ tùng / Hạng mục</label>
+                    <input type="text" name="name" id="partNameInput" required placeholder="VD: Nhớt máy Liqui Moly"
+                        class="w-full bg-teal-50/50 border border-teal-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400"
+                        oninput="checkDupName(this,'part','partNameWarn',null,document.getElementById('partVehicleId').value)">
+                    <div id="partNameWarn" class="hidden text-xs text-blue-500 mt-1 font-medium"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Chu kỳ (Số km)</label>
+                    <input type="number" name="lifetime" required placeholder="VD: 2000"
+                        class="w-full bg-teal-50/50 border border-teal-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400 font-mono">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Ghi chú</label>
+                        <input type="text" name="notes" placeholder="Tùy chọn"
+                            class="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-teal-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">Link mua</label>
+                        <input type="url" name="purchase_link" placeholder="Tùy chọn"
+                            class="w-full bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-ios-blue focus:outline-none focus:border-teal-400">
+                    </div>
+                </div>
+                <div class="flex items-center justify-between mt-2 p-3 bg-teal-50/30 rounded-lg border border-teal-100">
+                    <span class="text-xs font-semibold text-gray-700">Đồng bộ lên Hass (MQTT)</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="is_mqtt_enabled" class="sr-only peer" checked>
+                        <div
+                            class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-teal-500/30 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-ios-green">
+                        </div>
+                    </label>
+                </div>
+                <button type="submit"
+                    class="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-sm shadow mt-2 transition">Thêm
+                    Phụ Tùng</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: LOGS -->
+    <div id="logsModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center">
+        <div class="bg-white w-full sm:max-w-2xl sm:rounded-2xl h-[80vh] sm:h-[600px] flex flex-col shadow-2xl transform transition-transform translate-y-full sm:translate-y-0"
+            id="logsModalContent">
+            <div
+                class="px-5 py-4 border-b border-gray-100 font-bold text-lg flex justify-between items-center bg-gray-50 sm:rounded-t-2xl">
+                <div class="flex items-center gap-2"><i class="fa-solid fa-list-check text-ios-blue"></i> Nhật ký hệ
+                    thống</div>
+                <button type="button" onclick="closeLogs()"
+                    class="w-8 h-8 flex items-center justify-center bg-gray-200 rounded-full hover:bg-gray-300 transition"><i
+                        class="fa-solid fa-times text-sm"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 bg-[#1E1E1E] text-green-400 font-mono text-[12px] sm:text-[13px]"
+                id="logsContainer">
+                Đang tải nhật ký...
+            </div>
+            <div class="bg-gray-100 px-4 py-3 border-t border-gray-200 flex justify-between items-center text-sm font-semibold sm:rounded-b-2xl">
+                <button onclick="loadLogs(currentLogPage - 1)" id="prevLogBtn" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm disabled:opacity-50 hover:bg-gray-50 transition"><i class="fa-solid fa-chevron-left mr-1"></i> Mới hơn</button>
+                <span id="logPageIndicator" class="text-gray-500">Trang 1</span>
+                <button onclick="loadLogs(currentLogPage + 1)" id="nextLogBtn" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm disabled:opacity-50 hover:bg-gray-50 transition">Cũ hơn <i class="fa-solid fa-chevron-right ml-1"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Toggle Accordion
+        function toggleAccordion(id) {
+            const content = document.getElementById('details_' + id);
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+            } else {
+                content.classList.add('hidden');
+            }
+        }
+
+        // View Toggle (List/Grid)
+        function toggleView() {
+            const container = document.getElementById('main-container');
+            const icon = document.getElementById('view-icon');
+            if (container.classList.contains('view-list')) {
+                container.classList.remove('view-list');
+                container.classList.add('view-grid');
+                icon.className = 'fa-solid fa-grip';
+                localStorage.setItem('viewPref', 'grid');
+            } else {
+                container.classList.remove('view-grid');
+                container.classList.add('view-list');
+                icon.className = 'fa-solid fa-list';
+                localStorage.setItem('viewPref', 'list');
+            }
+        }
+
+        // Restore View Pref
+        if (localStorage.getItem('viewPref') === 'grid') {
+            document.getElementById('main-container').classList.remove('view-list');
+            document.getElementById('main-container').classList.add('view-grid');
+            document.getElementById('view-icon').className = 'fa-solid fa-grip';
+        }
+
+        // System Clock & MQTT Tracker Polling
+        function updateSystemStatus() {
+            fetch('/api/sys-status').then(r => r.json()).then(data => {
+                document.getElementById('sys-clock').innerHTML = `<i class="fa-regular fa-clock"></i> ${data.time}`;
+                const st = data.mqtt_status;
+                const badge = document.getElementById('mqtt-status');
+                if (st === 'Connected') {
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> <span class="text-green-600 font-semibold">Đã kết nối Hass</span>`;
+                } else {
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500"></span> <span class="text-red-500 font-semibold" title="${st}">Lỗi kết nối MQTT</span>`;
+                }
+            }).catch(e => {
+                document.getElementById('mqtt-status').innerHTML = `<span class="w-2 h-2 rounded-full bg-gray-500"></span> <span class="text-gray-500">Mất kết nối API</span>`;
+            });
+        }
+        setInterval(updateSystemStatus, 2000);
+        updateSystemStatus();
+
+        // SortableJS Init
+        function saveSortOrder(type, ids) {
+            fetch('/update-sort', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: type, ids: ids })
+            });
+        }
+
+        const equipList = document.getElementById('equipment-list');
+        if (equipList) {
+            new Sortable(equipList, {
+                group: 'devices',
+                animation: 150,
+                delay: 200, delayOnTouchOnly: true, // Nhấn giữ để kéo trên mobile
+                ghostClass: 'opacity-50',
+                onEnd: function (evt) {
+                    const ids = Array.from(equipList.children).map(c => c.dataset.id);
+                    saveSortOrder('device', ids);
+                }
+            });
+        }
+
+        document.querySelectorAll('.part-list').forEach(list => {
+            new Sortable(list, {
+                group: 'parts',
+                animation: 150,
+                delay: 200, delayOnTouchOnly: true,
+                ghostClass: 'opacity-50',
+                onEnd: function (evt) {
+                    const ids = Array.from(list.children).map(c => c.dataset.id);
+                    saveSortOrder('part', ids);
+                }
+            });
+        });
+
+        const vehicleList = document.getElementById('vehicle-list');
+        if (vehicleList) {
+            new Sortable(vehicleList, {
+                group: { name: 'vehicles', pull: false, put: false },
+                animation: 150,
+                handle: '.vehicle-drag-handle',
+                delay: 150, delayOnTouchOnly: true,
+                ghostClass: 'sortable-ghost-vehicle',
+                dragClass: 'sortable-drag-vehicle',
+                onEnd: function (evt) {
+                    const ids = Array.from(vehicleList.children)
+                        .filter(c => c.hasAttribute('data-id'))
+                        .map(c => c.dataset.id);
+                    saveSortOrder('vehicle', ids);
+                }
+            });
+        }
+
+        // Logs Modal logic
+        let currentLogPage = 1;
+        let totalLogPages = 1;
+        
+        function loadLogs(page) {
+            if (page < 1 || (page > totalLogPages && totalLogPages > 0)) return;
+            currentLogPage = page;
+            
+            document.getElementById('logsContainer').innerHTML = "Đang tải nhật ký...";
+            fetch('/api/logs?page=' + page).then(r => r.json()).then(data => {
+                totalLogPages = data.total_pages;
+                const html = data.logs.map(l => {
+                    const color = l.category.includes('Error') ? 'text-red-400' : (l.category.includes('MQTT') ? 'text-blue-300' : 'text-green-300');
+                    return `<div class="mb-1"><span class="text-gray-500">[${l.timestamp}]</span> <span class="${color} font-bold">[${l.category}]</span> ${l.description}</div>`;
+                }).join('');
+                document.getElementById('logsContainer').innerHTML = html || "Không có nhật ký.";
+                document.getElementById('logPageIndicator').innerText = `Trang ${currentLogPage} / ${totalLogPages}`;
+                document.getElementById('prevLogBtn').disabled = currentLogPage <= 1;
+                document.getElementById('nextLogBtn').disabled = currentLogPage >= totalLogPages;
+            });
+        }
+        
+        function openLogs() {
+            const m = document.getElementById('logsModal');
+            const c = document.getElementById('logsModalContent');
+            m.classList.remove('hidden');
+            setTimeout(() => { c.classList.remove('translate-y-full'); }, 10);
+            loadLogs(1);
+        }
+        function closeLogs() {
+            const m = document.getElementById('logsModal');
+            const c = document.getElementById('logsModalContent');
+            c.classList.add('translate-y-full');
+            setTimeout(() => { m.classList.add('hidden'); }, 300);
+        }
+
+        // Kiểm tra trùng tên realtime để báo info
+        let _dupTimer = null;
+        function checkDupName(input, type, warnId, groupId, vehicleId) {
+            clearTimeout(_dupTimer);
+            const warn = document.getElementById(warnId);
+            const val = input.value.trim();
+            if (!val) { warn.classList.add('hidden'); return; }
+            _dupTimer = setTimeout(() => {
+                let url = `/api/check-name?type=${type}&name=${encodeURIComponent(val)}`;
+                if (groupId) url += `&group_id=${groupId}`;
+                if (vehicleId) url += `&vehicle_id=${vehicleId}`;
+                fetch(url).then(r => r.json()).then(d => {
+                    if (d.exists) {
+                        let text = `Trùng tên! Tên hiển thị trên Hass sẽ là: <b>${d.new_name}</b>`;
+                        if (type === 'group') {
+                            text = `Trùng tên! Tên nhóm và tên trên Hass sẽ là: <b>${d.new_name}</b>`;
+                        }
+                        warn.innerHTML = `<i class="fa-solid fa-circle-info mr-1"></i>${text}`;
+                        warn.classList.remove('hidden');
+                    } else {
+                        warn.classList.add('hidden');
+                    }
+                });
+            }, 400);
+        }
+    </script>
+</body>
+
+</html>

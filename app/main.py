@@ -252,23 +252,23 @@ def calculate_part_metrics(part, current_odo, avg_km_day, db):
         else: percent = max(0, min(100, int((km_left / part['lifetime_km']) * 100)))
     else: percent = 0
         
-    if replace_date_str and avg_km_day > 0 and part['lifetime_km'] > 0:
-        replace_date_obj = parse_date_to_iso(replace_date_str)
-        if replace_date_obj:
-            days_for_cycle = min(36500, int(part['lifetime_km'] / avg_km_day))
-            next_date_obj = replace_date_obj + timedelta(days=days_for_cycle)
-            days_left = max(0, (next_date_obj.date() - datetime.now().date()).days)
-            if next_date_obj.date() <= datetime.now().date(): next_date = "Cần thay ngay!"; days_left = 0
-            else: next_date = next_date_obj.strftime("%d/%m/%Y")
+    logs = db.execute("SELECT log_date FROM odo_logs WHERE vehicle_id = ? ORDER BY log_date DESC, id DESC LIMIT 1", (part['vehicle_id'],)).fetchall()
+    last_update_date = parse_date_to_iso(logs[0]['log_date']) if logs else datetime.now()
+    if not last_update_date:
+        last_update_date = datetime.now()
+
+    if avg_km_day > 0 and km_left > 0:
+        days_left_from_last = min(36500, int(km_left / avg_km_day))
+        next_date_obj = last_update_date + timedelta(days=days_left_from_last)
+        days_left = max(0, (next_date_obj.date() - datetime.now().date()).days)
+        if next_date_obj.date() <= datetime.now().date():
+            next_date = "Cần thay ngay!"
+            days_left = 0
         else:
-            if avg_km_day > 0 and km_left > 0:
-                days_left = min(36500, int(km_left / avg_km_day))
-                next_date = (datetime.now() + timedelta(days=days_left)).strftime("%d/%m/%Y")
-            else: days_left = 0; next_date = "Cần thay ngay!" if km_left <= 0 else "Chưa rõ"
-    elif avg_km_day > 0 and km_left > 0:
-        days_left = min(36500, int(km_left / avg_km_day))
-        next_date = (datetime.now() + timedelta(days=days_left)).strftime("%d/%m/%Y")
-    else: days_left = 0; next_date = "Cần thay ngay!" if km_left <= 0 else "Chưa rõ"
+            next_date = next_date_obj.strftime("%d/%m/%Y")
+    else:
+        days_left = 0
+        next_date = "Cần thay ngay!" if km_left <= 0 else "Chưa rõ"
 
     replace_date_fmt = datetime.strptime(replace_date_str, "%Y-%m-%d").strftime("%d/%m/%Y") if replace_date_str else "Chưa có"
 

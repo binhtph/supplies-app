@@ -576,7 +576,7 @@
                                                             class="w-full bg-teal-50 border border-teal-200 rounded px-2 py-1 text-xs font-mono">
                                                     </div>
                                                 </div>
-                                                <div class="grid grid-cols-2 gap-2">
+                                                <div class="grid grid-cols-3 gap-2">
                                                     <div class="min-w-0"><label
                                                             class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase truncate">Ngày
                                                             thay</label><input type="date" name="replace_date"
@@ -587,6 +587,12 @@
                                                             class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase truncate">ODO
                                                             lúc thay</label><input type="number" name="replace_odo"
                                                             value="{{ p.replace_odo }}"
+                                                            class="w-full min-w-0 bg-white border border-gray-200 rounded px-1 sm:px-2 py-1 text-[11px] sm:text-xs font-mono">
+                                                    </div>
+                                                    <div class="min-w-0"><label
+                                                            class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase truncate">Chi
+                                                            phí (đ)</label><input type="number" name="cost"
+                                                            value="{{ p.cost | int if p.cost else '' }}"
                                                             class="w-full min-w-0 bg-white border border-gray-200 rounded px-1 sm:px-2 py-1 text-[11px] sm:text-xs font-mono">
                                                     </div>
                                                 </div>

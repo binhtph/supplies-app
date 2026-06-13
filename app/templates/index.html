@@ -47,13 +47,19 @@
             justify-content: center;
             border-radius: 50%;
         }
+        
+        .ios-header-blur {
+            background-color: rgba(255, 255, 255, 0.85) !important;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
     </style>
 </head>
 
 <body class="bg-ios-bg min-h-screen text-[#1C1C1E] pb-20 selection:bg-ios-blue selection:text-white" hx-boost="true">
 
     <!-- HEADER / STATUS BAR -->
-    <div class="bg-white/70 backdrop-blur-xl sticky top-0 z-40 border-b border-ios-grayLight px-4 py-3 shadow-sm">
+    <div class="ios-header-blur sticky top-0 z-40 border-b border-ios-grayLight px-4 py-3 shadow-sm">
         <div class="max-w-4xl mx-auto flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-layer-group text-ios-blue text-xl"></i>

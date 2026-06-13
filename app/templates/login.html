@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Đăng nhập - Quản lý Vật tư</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --ios-bg: #f2f2f7;
+            --ios-blue: #007aff;
+            --ios-blue-active: #0056b3;
+            --ios-text: #1c1c1e;
+            --ios-gray: #8e8e93;
+            --ios-input-bg: #ffffff;
+            --ios-border: rgba(60, 60, 67, 0.18);
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ios-bg: #000000;
+                --ios-text: #ffffff;
+                --ios-gray: #98989d;
+                --ios-input-bg: #1c1c1e;
+                --ios-border: rgba(84, 84, 88, 0.65);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--ios-bg);
+            color: var(--ios-text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            
+            /* Apple-like subtle mesh background */
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(0, 122, 255, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(52, 199, 89, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 122, 255, 0.15) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(88, 86, 214, 0.1) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        .login-container {
+            width: 100%;
+            max-w: 360px;
+            text-align: center;
+        }
+
+        .icon-container {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #007aff, #5856d6);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            box-shadow: 0 10px 20px rgba(0, 122, 255, 0.3);
+            color: white;
+            font-size: 36px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        p.subtitle {
+            color: var(--ios-gray);
+            font-size: 15px;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            position: relative;
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--ios-gray);
+            font-size: 16px;
+        }
+
+        .ios-input {
+            width: 100%;
+            background-color: var(--ios-input-bg);
+            border: 1px solid var(--ios-border);
+            color: var(--ios-text);
+            padding: 14px 16px 14px 44px;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.2s ease;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .ios-input:focus {
+            border-color: var(--ios-blue);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+        }
+
+        .ios-input::placeholder {
+            color: var(--ios-gray);
+        }
+
+        .btn-ios {
+            width: 100%;
+            background-color: var(--ios-blue);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-ios:hover {
+            background-color: var(--ios-blue-active);
+        }
+
+        .btn-ios:active {
+            transform: scale(0.98);
+        }
+
+        .error-msg {
+            background-color: rgba(255, 59, 48, 0.1);
+            color: #ff3b30;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="icon-container">
+            <i class="fas fa-layer-group"></i>
+        </div>
+        <h1>Hass Dashboard</h1>
+        <p class="subtitle">Đăng nhập để tiếp tục</p>
+
+        {% if error %}
+        <div class="error-msg">
+            <i class="fas fa-exclamation-circle"></i>
+            <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <form action="/login" method="POST">
+            <div class="form-group">
+                <i class="fas fa-user input-icon"></i>
+                <input type="text" id="username" name="username" class="ios-input" placeholder="Tên đăng nhập" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" id="password" name="password" class="ios-input" placeholder="Mật khẩu" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn-ios">Đăng nhập</button>
+        </form>
+    </div>
+</body>
+</html>

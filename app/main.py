@@ -10,16 +10,50 @@ import shutil
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import paho.mqtt.client as mqtt
-from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, Request, Form, BackgroundTasks, UploadFile, File, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 import urllib.parse
+from auth import verify_password, hash_password, create_access_token
+from config import config
 
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+
+from jose import jwt
+from auth import SECRET_KEY, ALGORITHM
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if request.url.path.startswith("/login") or request.url.path.startswith("/static") or request.url.path.startswith("/avatars"):
+        return await call_next(request)
+    
+    token = request.cookies.get("access_token")
+    if not token:
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        return RedirectResponse(url="/login", status_code=303)
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if not payload.get("sub"): raise ValueError()
+    except Exception:
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "Invalid token"}, status_code=401)
+        return RedirectResponse(url="/login", status_code=303)
+        
+    return await call_next(request)
+
+# Lazy initialize password hash on startup
+auth_config = config.get("auth")
+if not auth_config.get("password_hash"):
+    default_password = os.getenv("AUTH_PASSWORD", "admin123")
+    stored_password_hash = hash_password(default_password)
+    config.update("auth", {"password_hash": stored_password_hash})
+    print("Initialized password hash for auth")
 
 os.makedirs("data/avatars", exist_ok=True)
 app.mount("/avatars", StaticFiles(directory="data/avatars"), name="avatars")
@@ -638,6 +672,30 @@ def check_name(type: str, name: str, group_id: int = None, vehicle_id: int = Non
     if count > 0:
         return JSONResponse({"exists": True, "new_name": f"{name} ({count})"})
     return JSONResponse({"exists": False})
+
+@app.get("/login")
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@app.post("/login")
+def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
+    auth_config = config.get("auth")
+    stored_username = auth_config.get("username", "admin")
+    stored_password_hash = auth_config.get("password_hash")
+    
+    if username != stored_username or not verify_password(password, stored_password_hash):
+        return templates.TemplateResponse("login.html", {"request": request, "error": "Sai tên đăng nhập hoặc mật khẩu!"}, status_code=401)
+    
+    access_token = create_access_token(data={"sub": username})
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(key="access_token", value=access_token, httponly=True, max_age=30*24*3600)
+    return response
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("access_token")
+    return response
 
 @app.get("/")
 def index(request: Request, group_id: int = None):

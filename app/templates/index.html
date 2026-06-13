@@ -53,7 +53,7 @@
 <body class="bg-ios-bg min-h-screen text-[#1C1C1E] pb-20 selection:bg-ios-blue selection:text-white" hx-boost="true">
 
     <!-- HEADER / STATUS BAR -->
-    <div class="bg-white sticky top-0 z-40 border-b border-ios-grayLight px-4 py-3 shadow-sm">
+    <div class="bg-white/70 backdrop-blur-xl sticky top-0 z-40 border-b border-ios-grayLight px-4 py-3 shadow-sm">
         <div class="max-w-4xl mx-auto flex justify-between items-center">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-layer-group text-ios-blue text-xl"></i>
@@ -64,10 +64,16 @@
                 <div class="flex items-center gap-1" id="mqtt-status">
                     <span class="w-2 h-2 rounded-full bg-gray-400"></span> Đang tải...
                 </div>
-                <button onclick="toggleView()"
-                    class="p-2 bg-ios-grayLight rounded-lg text-ios-blue hover:bg-gray-200 transition">
-                    <i id="view-icon" class="fa-solid fa-list"></i>
-                </button>
+                <div class="flex items-center gap-2 ml-2">
+                    <button onclick="toggleView()"
+                        class="p-2 bg-ios-grayLight rounded-lg text-ios-blue hover:bg-gray-200 transition">
+                        <i id="view-icon" class="fa-solid fa-list"></i>
+                    </button>
+                    <a href="/logout"
+                        class="p-2 bg-red-50/80 rounded-lg text-red-500 hover:bg-red-100 transition shadow-sm" title="Đăng xuất">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </a>
+                </div>
             </div>
         </div>
     </div>

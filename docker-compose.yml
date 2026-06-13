@@ -11,9 +11,11 @@ services:
       - MQTT_PORT=1883
       - MQTT_USER=homeassistant
       - MQTT_PASSWORD=ochoc2AezeVoh2ae4fohf2Fool8eHoaqu8ueta7jimagheh4nia3zaesuong1Iif
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=admin123
     volumes:
       - ./app/data:/app/data
       - /mnt/hdd-data/supplies-app-backup:/backup
     command: >
-        bash -c "pip install fastapi uvicorn jinja2 paho-mqtt python-multipart tzdata && uvicorn main:app --host 0.0.0.0 --port 8000"
+        bash -c "pip install fastapi uvicorn jinja2 paho-mqtt python-multipart tzdata python-jose && uvicorn main:app --host 0.0.0.0 --port 8000"
     restart: always

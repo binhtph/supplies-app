@@ -25,6 +25,23 @@ templates = Jinja2Templates(directory="templates")
 
 from jose import jwt
 from auth import SECRET_KEY, ALGORITHM
+from pathlib import Path
+
+def get_git_version():
+    try:
+        head_dir = Path(".git")
+        with open(head_dir / "HEAD", "r") as f:
+            content = f.read().splitlines()[0]
+        if content.startswith("ref: "):
+            ref_path = content.split(" ")[1]
+            with open(head_dir / ref_path, "r") as f:
+                return f.read().strip()[:7]
+        return content.strip()[:7]
+    except Exception:
+        return "unknown"
+
+GIT_VERSION = get_git_version()
+templates.env.globals['GIT_VERSION'] = GIT_VERSION
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
